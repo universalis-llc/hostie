@@ -150,7 +150,7 @@ router
     const hostname = `${id.toLowerCase().replace(/[\.:\s]/g, '-')}.node.universalis.dev`;
 
     try {
-      const { stdout, stderr } = await exec(`${CONFIG.step.binary} ca token ${hostname} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --ssh --host --not-after 5m --provisioner-password-file=${__dirname}/../provisionerPassword.txt`);
+      const { stdout, stderr } = await exec(`${CONFIG.step.binary} ca token ${hostname} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --ssh --host --not-after 5m --provisioner-password-file=${__dirname}/../provisionerPassword.txt --root=${__dirname}/../${CONFIG.step.rootCAPath}`);
       if (!stdout) {
         console.error(stderr);
         throw new ErrorWithStatusCode("Unknown step ca token request error, see logs", null, 500);

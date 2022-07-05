@@ -15,6 +15,7 @@
   "step": {
     "binary": "step",
     "url": "",
-    "provisioner": ""
+    "provisioner": "",
+    "rootCAPath": "root_ca.crt"
   }
 }
