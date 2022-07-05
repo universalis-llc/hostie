@@ -11,5 +11,10 @@
     "cert": "",
     "port": 443,
     "dev": true
+  },
+  "step": {
+    "binary": "step",
+    "url": "",
+    "provisioner": ""
   }
 }

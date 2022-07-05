@@ -34,9 +34,14 @@ const httpsOptions = httpsEnabled ?
     } : undefined;
 
 const app = new Koa();
-const router = new Router();
+const router = new Router({
+  onMethodNotAllowed(ctx){
+    ctx.body = `${ctx.req.method} method not supported by this endpoint`;
+  }
+});
 
-console.debug(`HTTPS is ${httpsEnabled ? 'enabled' : 'disabled'}`);
+console.debug(`HTTPS is ${httpsEnabled ? 'enabled' : 'disabled'}.`);
+console.debug(`Environment is ${DEV_MODE ? 'development' : 'production'}.`)
 
 function getParams(ctx, requested) {
   const params = new URLSearchParams(ctx.request.querystring);
@@ -144,7 +149,7 @@ router
     const hostname = `${id.replace(/\./g, '-')}.node.universalis.dev`;
 
     try {
-      const { stdout, stderr } = await exec(`step-cli ca token ${hostname} --ca-url=master1.node.universalis.dev:55125 --provisioner=ayrton.sparling@universalis.dev --ssh --host --not-after 5m --provisioner-password-file=${__dirname}/../provisionerPassword.txt`);
+      const { stdout, stderr } = await exec(`${CONFIG.step.binary} ca token ${hostname} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --ssh --host --not-after 5m --provisioner-password-file=${__dirname}/../provisionerPassword.txt`);
       if (!stdout) {
         console.error(stderr);
         throw new ErrorWithStatusCode("Unknown step ca token request error, see logs", null, 500);

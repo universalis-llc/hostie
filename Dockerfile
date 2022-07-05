@@ -1,6 +1,6 @@
 FROM node:18-alpine
 
-RUN apk add --no-cache jq
+RUN apk add --no-cache jq step-cli
 
 # Create app directory
 WORKDIR /usr/src/app
