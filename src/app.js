@@ -146,7 +146,7 @@ router
       throw new ErrorWithStatusCode("Invalid secret", null, 400);
     }
 
-    const hostname = `${id.replace(/\./g, '-')}.node.universalis.dev`;
+    const hostname = `${id.toLowerCase().replace(/[\.:\s]/g, '-')}.node.universalis.dev`;
 
     try {
       const { stdout, stderr } = await exec(`${CONFIG.step.binary} ca token ${hostname} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --ssh --host --not-after 5m --provisioner-password-file=${__dirname}/../provisionerPassword.txt`);
