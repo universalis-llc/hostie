@@ -35,9 +35,10 @@ const httpsOptions = httpsEnabled ?
 
 const app = new Koa();
 const router = new Router({
-  onMethodNotAllowed(ctx){
-    ctx.body = `${ctx.req.method} method not supported by this endpoint`;
-  }
+  // Adding this causes static files to be unable to serve
+  // onMethodNotAllowed(ctx){
+  //   ctx.body = `${ctx.req.method} method not supported by this endpoint`;
+  // }
 });
 
 console.debug(`HTTPS is ${httpsEnabled ? 'enabled' : 'disabled'}.`);
@@ -220,8 +221,6 @@ app.use(async (ctx, next) => {
 
 app
   .use(router.routes())
-
-app
   .use(serve('./public'));
 
 async function main() {
