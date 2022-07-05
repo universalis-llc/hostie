@@ -1,0 +1,15 @@
+{
+  "secret": "",
+  "database": {
+    "location": "database"
+  },
+  "http": {
+    "port": 80
+  },
+  "https": {
+    "key": "",
+    "cert": "",
+    "port": 443,
+    "dev": true
+  }
+}
