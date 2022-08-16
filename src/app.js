@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import serve from 'koa-static';
 import { exec as execCB } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs/promises'
 
 import init, { assets } from './database.js';
 import * as crypto from './crypto.js';
@@ -89,65 +92,46 @@ async function requireTLS(ctx, next) {
   await next();
 }
 
+async function secret(ctx, next) {
+  const id = getId(ctx);
+  const { secret } = getParams(ctx, { secret: { required: true } });
+
+  // Try to get storedSecret for this id
+  let storedSecret;
+  try {
+    storedSecret = await assets.get(id);
+  } catch (e) {
+    if (e.code !== 'LEVEL_NOT_FOUND') throw e;
+    throw new ErrorWithStatusCode(`asset with id "${id}" does not exist`, null, 400);
+  }
+
+  // Check if provided secret is valid
+  if (storedSecret !== secret) {
+    throw new ErrorWithStatusCode("Invalid secret", null, 400);
+  }
+
+  ctx.deviceId = id;
+
+  await next();
+}
+
+function getId(ctx) {
+  return ctx.request.ip.toLowerCase().replace(/[\.:\s]/g, '-').replace(/^\-+/, '');
+}
+
 router
-  // .get('/asset/key', async (ctx) => {
-  //   const { uuid, stateless } = getParams(ctx, { uuid: { required: true }, stateless: undefined });
-
-  //   if (stateless) {
-
-  //     const key = await crypto.generateStatelessAssetKey(uuid);
-  //     ctx.body = JSON.stringify({
-  //       key: {
-  //         value: key.toString("hex"),
-  //         encoding: 'hex'
-  //       }
-  //     });
-  //   }
-  //   else {
-  //     try {
-
-  //       const key = await assets.get(`${uuid}.key`);
-  //       ctx.body = JSON.stringify({
-  //         key: {
-  //           value: key.toString("hex"),
-  //           encoding: 'hex'
-  //         }
-  //       });
-
-  //     } catch (e) {
-  //       console.debug(e)
-  //       if (e.code === 'LEVEL_NOT_FOUND')
-  //         throw new ErrorWithStatusCode('no key for asset found', null, 400);
-  //       else throw e;
-  //     }
-  //   }
-  // })
   .get('/health', ctx => {
     ctx.status = 200;
     ctx.body = "OK";
   })
-  .get('/ssh/token', requireTLS, async ctx => {
-    const { id, secret, type } = getParams(ctx, { id: { required: true }, secret: { required: true }, type: { required: true } });
+  .get('/ssh/token', requireTLS, secret, async ctx => {
+    const { type } = getParams(ctx, { type: { required: true } });
 
     if (type !== 'host') {
       throw new ErrorWithStatusCode('Only host type tokens are supported', null, 400);
     }
 
-    // Try to get storedSecret for this id
-    let storedSecret;
-    try {
-      storedSecret = await assets.get(id);
-    } catch (e) {
-      if (e.code !== 'LEVEL_NOT_FOUND') throw e;
-      throw new ErrorWithStatusCode(`asset with id "${id}" does not exist`, null, 400);
-    }
-
-    // Check if provided secret is valid
-    if (storedSecret !== secret) {
-      throw new ErrorWithStatusCode("Invalid secret", null, 400);
-    }
-
-    const hostname = `${id.toLowerCase().replace(/[\.:\s]/g, '-')}.node.universalis.dev`;
+    const hostname = `${ctx.deviceId}.node.universalis.dev`;
 
     try {
       const { stdout, stderr } = await exec(`${CONFIG.step.binary} ca token ${hostname} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --ssh --host --not-after 5m --provisioner-password-file=${__dirname}/../provisionerPassword.txt --root=${__dirname}/../${CONFIG.step.rootCAPath}`);
@@ -163,12 +147,55 @@ router
     }
 
   })
+  .get('/ssh/ssh_host_ecdsa_key', requireTLS, secret, async ctx => {
+    const hostname = `${ctx.deviceId}.node.universalis.dev`;
 
-  .post('/asset', requireTLS, async ctx => {
-    const { id, secret } = getParams(ctx, { id: { required: true }, secret: { required: true }, });
+    const outputPath = path.join(tmpdir(), hostname);
+    await Promise.all([
+      fs.rm(outputPath, { force: true }),
+      fs.rm(outputPath + '-cert.pub', { force: true }),
+      fs.rm(outputPath + '.pub', { force: true })
+    ]);
+    try {
+      const command = `${CONFIG.step.binary} ssh certificate "${hostname}" ${outputPath} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --host --provisioner-password-file=${__dirname}/../provisionerPassword.txt --no-password --insecure`;
+
+      const { stdout, stderr } = await exec(command);
+      try {
+        await fs.stat(outputPath);
+      } catch (e) {
+        console.error(stdout, stderr);
+        throw new ErrorWithStatusCode("Unknown step ca token request error, see logs", null, 500);
+      }
+      ctx.status = 200;
+      ctx.body = await fs.readFile(outputPath);
+      await fs.rm(outputPath);
+    } catch (e) {
+      console.error(e);
+      throw new ErrorWithStatusCode("Unknown step ca token request error, see logs", null, 500);
+    }
+
+  })
+  .get('/ssh/ssh_host_ecdsa_key-cert.pub', requireTLS, secret, async ctx => {
+    const hostname = `${ctx.deviceId}.node.universalis.dev`;
+    const outputPath = path.join(tmpdir(), hostname) + '-cert.pub';
 
     try {
-      const secret = await assets.get(id);
+      await fs.stat(outputPath);
+    } catch (e) {
+      throw new ErrorWithStatusCode("file not prepared yet", null, 428);
+    }
+
+    ctx.body = await fs.readFile(outputPath);
+    await fs.rm(outputPath);
+    ctx.status = 200;
+  })
+
+  .post('/asset', requireTLS, async ctx => {
+    const id = getId(ctx);
+    const { secret } = getParams(ctx, { secret: { required: true }, });
+
+    try {
+      await assets.get(id);
       throw new ErrorWithStatusCode(`asset with id ${id} already exists`, null, 200);
     } catch (e) {
       if (e.code !== 'LEVEL_NOT_FOUND') throw e;
@@ -221,7 +248,8 @@ app.use(async (ctx, next) => {
 
 app
   .use(router.routes())
-  .use(serve('./public'));
+  // Allow hidden to serve .well-known files for domain validation
+  .use(serve('./public', { hidden: true }));
 
 async function main() {
   await init();
