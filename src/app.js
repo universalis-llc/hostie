@@ -157,7 +157,7 @@ router
       fs.rm(outputPath + '.pub', { force: true })
     ]);
     try {
-      const command = `${CONFIG.step.binary} ssh certificate "${hostname}" ${outputPath} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --host --provisioner-password-file=${__dirname}/../provisionerPassword.txt --no-password --insecure`;
+      const command = `${CONFIG.step.binary} ssh certificate "${hostname}" ${outputPath} --ca-url=${CONFIG.step.url} --provisioner=${CONFIG.step.provisioner} --host --provisioner-password-file=${__dirname}/../provisionerPassword.txt --no-password --insecure --root=${__dirname}/../${CONFIG.step.rootCAPath}`;
 
       const { stdout, stderr } = await exec(command);
       try {
