@@ -116,7 +116,9 @@ async function secret(ctx, next) {
 }
 
 function getId(ctx) {
-  return ctx.request.ip.toLowerCase().replace(/[\.:\s]/g, '-').replace(/^\-+/, '');
+  let ip = ctx.header['x-forwarded-for'] || ctx.request.ip;
+  return ip.toLowerCase().replace(/[\.:\s]/g, '-').replace(/^\-+/, '');
+}
 }
 
 router
