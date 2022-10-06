@@ -11,7 +11,7 @@ import serve from 'koa-static';
 import { exec as execCB } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import fs from 'node:fs/promises'
+import fs from 'node:fs/promises';
 
 import init, { assets } from './database.js';
 import * as crypto from './crypto.js';
@@ -86,8 +86,8 @@ async function auth(ctx, next) {
 }
 
 async function requireTLS(ctx, next) {
-  if (ctx.protocol !== "https") {
-    throw new ErrorWithStatusCode("This endpoint requires TLS. Use https", null, 403);
+  if (ctx.protocol !== "https" && ctx.header['x-forwarded-proto'] !== "https") {
+    throw new ErrorWithStatusCode("This endpoint requires TLS. Use https.", null, 403);
   }
   await next();
 }
