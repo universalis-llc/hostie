@@ -12,6 +12,9 @@
     "port": 443,
     "dev": true
   },
+  "dns": {
+    "token": ""
+  },
   "step": {
     "binary": "step",
     "url": "",

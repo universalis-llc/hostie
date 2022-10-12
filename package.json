@@ -11,6 +11,7 @@
   "author": "Ayrton Sparling",
   "license": "MIT",
   "dependencies": {
+    "got": "^12.5.0",
     "koa": "^2.13.4",
     "koa-static": "^5.0.0",
     "koa-tree-router": "^0.10.1",

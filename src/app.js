@@ -8,6 +8,7 @@ import { promisify } from 'util';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import serve from 'koa-static';
+import got from 'got';
 import { exec as execCB } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -119,14 +120,18 @@ function getId(ctx) {
   let ip = ctx.header['x-forwarded-for'] || ctx.request.ip;
   return ip.toLowerCase().replace(/[\.:\s]/g, '-').replace(/^\-+/, '');
 }
+
+async function registerAsset(id, secret, ip) {
+  await assets.put(id, secret);
+  console.info(`Registered ${id}`, data);
 }
 
 router
-  .get('/health', ctx => {
+  .get('/api/v1/health', ctx => {
     ctx.status = 200;
     ctx.body = "OK";
   })
-  .get('/ssh/token', requireTLS, secret, async ctx => {
+  .get('/api/v1/ssh/token', requireTLS, secret, async ctx => {
     const { type } = getParams(ctx, { type: { required: true } });
 
     if (type !== 'host') {
@@ -149,7 +154,7 @@ router
     }
 
   })
-  .get('/ssh/ssh_host_ecdsa_key', requireTLS, secret, async ctx => {
+  .get('/api/v1/ssh/ssh_host_ecdsa_key', requireTLS, secret, async ctx => {
     const hostname = `${ctx.deviceId}.node.universalis.dev`;
 
     const outputPath = path.join(tmpdir(), hostname);
@@ -177,7 +182,7 @@ router
     }
 
   })
-  .get('/ssh/ssh_host_ecdsa_key-cert.pub', requireTLS, secret, async ctx => {
+  .get('/api/v1/ssh/ssh_host_ecdsa_key-cert.pub', requireTLS, secret, async ctx => {
     const hostname = `${ctx.deviceId}.node.universalis.dev`;
     const outputPath = path.join(tmpdir(), hostname) + '-cert.pub';
 
@@ -192,7 +197,7 @@ router
     ctx.status = 200;
   })
 
-  .post('/asset', requireTLS, async ctx => {
+  .post('/api/v1/asset', requireTLS, async ctx => {
     const id = getId(ctx);
     const { secret } = getParams(ctx, { secret: { required: true }, });
 
@@ -203,15 +208,13 @@ router
       if (e.code !== 'LEVEL_NOT_FOUND') throw e;
     }
 
-
-    await assets.put(id, secret);
-    console.info(`Registered ${id}`);
+    await registerAsset(id, secret, ctx.request.ip);
 
     ctx.status = 201;
 
   })
 
-  .delete('/asset', requireTLS, auth, async ctx => {
+  .delete('/api/v1/asset', requireTLS, auth, async ctx => {
     const { id } = getParams(ctx, { id: { required: true } });
     try {
       await assets.get(id);
@@ -223,7 +226,7 @@ router
     }
   })
 
-  .get('/asset', requireTLS, auth, async ctx => {
+  .get('/api/v1/asset', requireTLS, auth, async ctx => {
     const keys = await assets.keys({ limit: 100 }).all();
 
     ctx.body = JSON.stringify(keys);
@@ -251,7 +254,7 @@ app.use(async (ctx, next) => {
 app
   .use(router.routes())
   // Allow hidden to serve .well-known files for domain validation
-  .use(serve('./public', { hidden: true }));
+  // .use(serve('./public', { hidden: true }));
 
 async function main() {
   await init();

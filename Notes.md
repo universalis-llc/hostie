@@ -5,10 +5,16 @@ git clone --depth=1 https://git.alpinelinux.org/aports -b v3.16.2
 cd aports/main/linux-lts/
 echo "Adding VFIO MDEV support to kernel config"
 echo "CONFIG_VFIO_MDEV=m" >> lts.x86_64.config
+# Remote kernel level syslog
 echo "CONFIG_NETCONSOLE=y" >> lts.x86_64.config
+# Live kernel patching/swapping
 echo "CONFIG_KEXEC=y" >> lts.x86_64.config
+# Allow kernel to load compressed firmware
 echo "CONFIG_FW_LOADER_COMPRESS=y" >> lts.x86_64.config
+# Better server performance
 echo -e "CONFIG_HZ_100=y\nCONFIG_HZ=100\nCONFIG_HZ_300=n" >> lts.x86_64.config
+# 1GB hugepages runtime support
+echo "CONFIG_CMA=y" >> lts.x86_64.config
 abuild-keygen -aqn
 abuild -F checksum
 abuild -Fr
@@ -109,6 +115,8 @@ mdevctl start -u 4b20d080-1b54-4048-85b3-a6a62d165c01 -p 0000:07:00.0 -t nvidia-
 echo 4b20d080-1b54-4048-85b3-a6a62d165c01 > /sys/devices/pci0000:00/0000:00:03.1/0000:07:00.0/mdev_supported_types/nvidia-902/create
 ```
 
+Mdev `failed to read device config space: Bad address` error goes away on its own after some time. No idea was causes it.
+
 Libvirt Mdev device:
 `virsh -c "qemu+ssh://root@[2605:a601:a7ab:3901:aaa1:59ff:fe9c:b269]/system" nodedev-define ./mdev_node.xml`
 ```xml
@@ -116,7 +124,7 @@ Libvirt Mdev device:
   <name>mdev</name>
   <parent>computer</parent>
   <capability type='mdev'>
-    <type id='nvidia-904'/>
+    <type id='nvidia-902'/>
     <uuid>4b20d080-1b54-4048-85b3-a6a62d165c01</uuid>
   </capability>
 </device>
@@ -127,7 +135,7 @@ Libvirt Mdev device:
 <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
   <qemu:commandline>
     <qemu:arg value="-device"/>
-    <qemu:arg value="vfio-pci,sysfsdev=/sys/bus/mdev/devices/4b20d080-1b54-4048-85b3-a6a62d165c01,ramfb=on,display=on,id=hostpci0.0,addr=0x6.0,x-pci-vendor-id=0x10de,x-pci-device-id=0x17F0,x-pci-sub-vendor-id=0x10de,x-pci-sub-device-id=0x11A0"/>
+    <qemu:arg value="vfio-pci-nohotplug,sysfsdev=/sys/bus/mdev/devices/4b20d080-1b54-4048-85b3-a6a62d165c01,ramfb=on,display=on,id=hostpci0.0,addr=0x6.0,x-pci-vendor-id=0x10de,x-pci-device-id=0x17F0,x-pci-sub-vendor-id=0x10de,x-pci-sub-device-id=0x11A0"/>
     <qemu:arg value="-uuid"/>
     <qemu:arg value="4b20d080-1b54-4048-85b3-a6a62d165c01"/>
   </qemu:commandline>
@@ -367,4 +375,214 @@ Solution: `modprobe vfio_iommu_type1 vfio_pci`
     </memballoon>
   </devices>
 </domain>
+```
+
+Full XML with nvme drive:
+```xml
+<domain xmlns:qemu="http://libvirt.org/schemas/domain/qemu/1.0" type="kvm">
+  <name>win11</name>
+  <uuid>4b93d467-49a4-4b9d-8ae4-37033fc358a3</uuid>
+  <metadata>
+    <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
+      <libosinfo:os id="http://microsoft.com/win/10"/>
+    </libosinfo:libosinfo>
+  </metadata>
+  <memory unit="KiB">8388608</memory>
+  <currentMemory unit="KiB">8388608</currentMemory>
+  <memoryBacking>
+    <hugepages>
+      <page size="1" unit="GiB"/>
+    </hugepages>
+  </memoryBacking>
+  <vcpu placement="static">8</vcpu>
+  <iothreads>4</iothreads>
+  <os>
+    <type arch="x86_64" machine="pc-q35-7.0">hvm</type>
+    <loader readonly="yes" type="pflash">/usr/share/qemu/edk2-x86_64-code.fd</loader>
+    <nvram template="/usr/share/qemu/edk2-i386-vars.fd">/var/lib/libvirt/qemu/nvram/win11_VARS.fd</nvram>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+    <hyperv mode="custom">
+      <relaxed state="on"/>
+      <vapic state="on"/>
+      <spinlocks state="on" retries="8191"/>
+      <vpindex state="on"/>
+      <synic state="on"/>
+      <frequencies state="on"/>
+      <reenlightenment state="on"/>
+      <tlbflush state="on"/>
+    </hyperv>
+    <kvm>
+      <hint-dedicated state="off"/>
+    </kvm>
+    <vmport state="off"/>
+    <ioapic driver="kvm"/>
+  </features>
+  <cpu mode="host-passthrough" check="none" migratable="on">
+    <topology sockets="1" dies="1" cores="4" threads="2"/>
+  </cpu>
+  <clock offset="localtime">
+    <timer name="rtc" tickpolicy="catchup"/>
+    <timer name="pit" tickpolicy="delay"/>
+    <timer name="hpet" present="no"/>
+    <timer name="hypervclock" present="yes"/>
+    <timer name="tsc" present="yes"/>
+  </clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <pm>
+    <suspend-to-mem enabled="yes"/>
+    <suspend-to-disk enabled="no"/>
+  </pm>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type="file" device="disk">
+      <driver name="qemu" type="qcow2"/>
+      <source file="/mnt/storage/win10.qcow2"/>
+      <backingStore/>
+      <target dev="vda" bus="virtio"/>
+      <boot order="2"/>
+      <address type="pci" domain="0x0000" bus="0x04" slot="0x00" function="0x0"/>
+    </disk>
+    <disk type="nvme" device="disk">
+      <driver name="qemu" type="raw" cache="none"/>
+      <source type="pci" managed="yes" namespace="1">
+        <address domain="0x0000" bus="0x01" slot="0x00" function="0x0"/>
+      </source>
+      <target dev="vde" bus="virtio"/>
+      <address type="pci" domain="0x0000" bus="0x08" slot="0x00" function="0x0"/>
+    </disk>
+    <controller type="usb" index="0" model="qemu-xhci" ports="15">
+      <address type="pci" domain="0x0000" bus="0x02" slot="0x00" function="0x0"/>
+    </controller>
+    <controller type="pci" index="0" model="pcie-root"/>
+    <controller type="pci" index="1" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="1" port="0x10"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x0" multifunction="on"/>
+    </controller>
+    <controller type="pci" index="2" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="2" port="0x11"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x1"/>
+    </controller>
+    <controller type="pci" index="3" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="3" port="0x12"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x2"/>
+    </controller>
+    <controller type="pci" index="4" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="4" port="0x13"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x3"/>
+    </controller>
+    <controller type="pci" index="5" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="5" port="0x14"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x4"/>
+    </controller>
+    <controller type="pci" index="6" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="6" port="0x15"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x5"/>
+    </controller>
+    <controller type="pci" index="7" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="7" port="0x16"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x6"/>
+    </controller>
+    <controller type="pci" index="8" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="8" port="0x17"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x7"/>
+    </controller>
+    <controller type="pci" index="9" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="9" port="0x18"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x0" multifunction="on"/>
+    </controller>
+    <controller type="pci" index="10" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="10" port="0x19"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x1"/>
+    </controller>
+    <controller type="pci" index="11" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="11" port="0x1a"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x2"/>
+    </controller>
+    <controller type="pci" index="12" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="12" port="0x1b"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x3"/>
+    </controller>
+    <controller type="pci" index="13" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="13" port="0x1c"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x4"/>
+    </controller>
+    <controller type="pci" index="14" model="pcie-root-port">
+      <model name="pcie-root-port"/>
+      <target chassis="14" port="0x1d"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x5"/>
+    </controller>
+    <controller type="sata" index="0">
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x1f" function="0x2"/>
+    </controller>
+    <controller type="virtio-serial" index="0">
+      <address type="pci" domain="0x0000" bus="0x03" slot="0x00" function="0x0"/>
+    </controller>
+    <interface type="direct" trustGuestRxFilters="yes">
+      <mac address="52:54:00:d3:4f:fd"/>
+      <source dev="eth0" mode="bridge"/>
+      <model type="virtio"/>
+      <address type="pci" domain="0x0000" bus="0x01" slot="0x00" function="0x0"/>
+    </interface>
+    <serial type="pty">
+      <target type="isa-serial" port="0">
+        <model name="isa-serial"/>
+      </target>
+    </serial>
+    <console type="pty">
+      <target type="serial" port="0"/>
+    </console>
+    <channel type="spicevmc">
+      <target type="virtio" name="com.redhat.spice.0"/>
+      <address type="virtio-serial" controller="0" bus="0" port="1"/>
+    </channel>
+    <input type="mouse" bus="ps2"/>
+    <input type="keyboard" bus="ps2"/>
+    <input type="tablet" bus="virtio">
+      <address type="pci" domain="0x0000" bus="0x06" slot="0x00" function="0x0"/>
+    </input>
+    <input type="keyboard" bus="virtio">
+      <address type="pci" domain="0x0000" bus="0x07" slot="0x00" function="0x0"/>
+    </input>
+    <sound model="ich9">
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x1b" function="0x0"/>
+    </sound>
+    <audio id="1" type="spice"/>
+    <redirdev bus="usb" type="spicevmc">
+      <address type="usb" bus="0" port="2"/>
+    </redirdev>
+    <redirdev bus="usb" type="spicevmc">
+      <address type="usb" bus="0" port="3"/>
+    </redirdev>
+    <memballoon model="virtio">
+      <stats period="5"/>
+      <address type="pci" domain="0x0000" bus="0x05" slot="0x00" function="0x0"/>
+    </memballoon>
+  </devices>
+  <seclabel type="dynamic" model="dac" relabel="yes"/>
+  <qemu:commandline>
+    <qemu:arg value="-device"/>
+    <qemu:arg value="vfio-pci-nohotplug,sysfsdev=/sys/bus/mdev/devices/4b20d080-1b54-4048-85b3-a6a62d165c01,ramfb=on,display=on,id=hostpci0.0,addr=0x6.0,x-pci-vendor-id=0x10de,x-pci-device-id=0x17F0,x-pci-sub-vendor-id=0x10de,x-pci-sub-device-id=0x11A0"/>
+    <qemu:arg value="-uuid"/>
+    <qemu:arg value="4b20d080-1b54-4048-85b3-a6a62d165c01"/>
+  </qemu:commandline>
+</domain>
+
 ```
